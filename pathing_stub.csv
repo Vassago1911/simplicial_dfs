@@ -1,0 +1,7 @@
+key,value
+complex_data_folder,./complex_data/
+raw_folder,raw/
+raw_file_prefix,raw_
+computed_folder_suffix,computed_dataframes/
+computed_vertex_folder_suffix,0_dfs/
+computed_edge_folder_suffix,1_dfs/
