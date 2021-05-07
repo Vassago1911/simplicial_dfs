@@ -3,22 +3,22 @@ import os
 
 """we maintain a datastructure of a clique complex with the assumption
       for each vertex there is an edge with it as source or target = no isolated points
-one puts in a generating edge list < source | target | data(?) > and the Clique-Complex
-is built from it as a convenient data structure of max cliques as well as degree wise
-cliques .. in principle one could build inclusions of such things, that's interesting 
-enough for business, to see cycles close for example
+    one puts in a generating edge list < source | target | data(?) > and the Clique-Complex
+    is built from it as a convenient data structure of max cliques as well as degree wise
+    cliques .. in principle one could build inclusions of such things, that's interesting 
+    enough for business, to see cycles close for example
 
-the edgelist dataframe can be considered directed as well as undirected, it will handle
-itself conveniently with a total order on union{source-type, target-type} e.g. string or int
-like building cliques on the symmetrised dataframe and using the total order to give ordered
-tuples back 
-furthermore it will maintain a dataframe of vertex labels which is assumed to have data like
-    vertex_labels_df = < index | label | [data] > 
-the index is maintained aligned with the total ordering on "label" 
-as well as data on edges 
-    edgelist_df = < source_index | target_index | [data] >
-every other data structure is assumed computed from this here code, not imported from source-frames
-but will carry computed data like lagrangian eigenvectors, cycles.. and such"""
+    the edgelist dataframe can be considered directed as well as undirected, it will handle
+    itself conveniently with a total order on union{source-type, target-type} e.g. string or int
+    like building cliques on the symmetrised dataframe and using the total order to give ordered
+    tuples back 
+    furthermore it will maintain a dataframe of vertex labels which is assumed to have data like
+        vertex_labels_df = < index | label | [data] > 
+    the index is maintained aligned with the total ordering on "label" 
+    as well as data on edges 
+        edgelist_df = < source_index | target_index | [data] >
+    every other data structure is assumed computed from this here code, not imported from source-frames
+    but will carry computed data like lagrangian eigenvectors, cycles.. and such"""
 
 class config_handler():
     @staticmethod
@@ -76,7 +76,7 @@ class config_handler():
 FOLDER_CONFIG_FILENAME = "pathing_stub.csv"
 config_stub = config_handler.read_from_full_filename(filename=FOLDER_CONFIG_FILENAME)
 data_folder = config_stub.get_key('complex_data_folder')
-if data_folder not in os.listdir():
+if os.path.normpath(data_folder) not in os.listdir():
     os.mkdir(data_folder)
 del FOLDER_CONFIG_FILENAME    
 
@@ -256,6 +256,57 @@ class complex_explorer_from_graph():
             del df 
         return tmp 
 
+    def __path_str_to_tuple__(self, path_str:str)->tuple:
+        return tuple(map(int, path_str.split('->')))
+
+    def __tuple_to_path_str__(self, path_tuple:tuple)->str:
+        return '->'.join(map(str,path_tuple))
+
+    @property
+    def data_simple_paths(self):
+        """
+        either load, or if not generated yet, generate, save and load list of all simple short
+        paths wrt data-order on the graph
+        """
+        def simple_short_paths()->pd.DataFrame:
+            def iterated_join_edgelist(df:pd.DataFrame, lim:int=20)->pd.DataFrame:
+                def clean_last_vertex_to_simple_path(l):
+                    l = list(l)
+                    if l[-1] in l[:-1]:
+                        return -1
+                    return l[-1]
+                def paths_postprocess(path_df:pd.DataFrame)->pd.DataFrame:
+                    path_df = pd.DataFrame(path_df.apply(tuple,axis=1)\
+                            .apply(lambda x: tuple(filter(lambda z: z>-1,x)))\
+                            .unique(), columns=['simple_path_tuple'])
+                    path_df['v_length'] = path_df.simple_path_tuple.apply(len)
+                    path_df['p_0'] = path_df.simple_path_tuple.apply(lambda x: x[0])
+                    path_df['t'] = path_df.simple_path_tuple.apply(lambda x: x[-1])
+                    path_df['simple_path_tuple'] = path_df.simple_path_tuple.apply(self.__tuple_to_path_str__)
+                    path_df = path_df.sort_values(['v_length', 'p_0', 't', 'simple_path_tuple']).reset_index().drop(columns=['index'])
+                    path_df = path_df.rename(columns={'simple_path_tuple':'simple_path'})
+                    return path_df
+                assert list(df.columns) == [0,1]
+                loop_free_edges = df[df[0]!=df[1]].copy()
+                tmp_df = loop_free_edges.copy()
+                for i in range(2,lim):
+                    tmp_df = tmp_df.merge(loop_free_edges.rename(columns={0:i-1,1:i}), 'left').fillna(-1).applymap(int)
+                    tmp_df[i] = tmp_df.apply(clean_last_vertex_to_simple_path,axis=1)
+                    if tmp_df[i].max() == -1:
+                        return paths_postprocess(tmp_df.drop(columns=i))
+                    tmp_df = tmp_df.sort_values(i,ascending=False)
+                return paths_postprocess(tmp_df)
+            df = pd.DataFrame(self.data_edgelist)
+            loop_free_edges = df[df[0]!=df[1]].copy()
+            path_df = iterated_join_edgelist(loop_free_edges)
+            return path_df
+        if '1_data_paths.csv' not in os.listdir(self.config.get_key('COMPUTED_EDGE_FOLDER')):
+            df = simple_short_paths()
+            df.to_csv(self.config.get_key('COMPUTED_EDGE_FOLDER') + '1_data_paths.csv',index=False)
+        df = pd.read_csv(self.config.get_key('COMPUTED_EDGE_FOLDER') + '1_data_paths.csv')
+        df['simple_path'] = df['simple_path'].apply(self.__path_str_to_tuple__)
+        return df
+
     @property
     def data_dfs_tree(self):
         """
@@ -267,32 +318,4 @@ cx = complex_explorer_from_graph('elbformat')
 df = pd.read_csv('2021-02-23_elbformat.de_graph.csv').rename(columns={'from':'source', 'to':'target'})
 cx.load_raw_VE_data_from_edgelist(edgelist_df=df)
 
-def simple_short_paths(df, lim:int=10)->dict:
-    def iterated_join_edgelist(df:pd.DataFrame, lim:int=20)->pd.DataFrame:
-        def clean_last_vertex_to_simple_path(l):
-            l = list(l)
-            if l[-1] in l[:-1]:
-                return -1
-            return l[-1]
-        def paths_postprocess(path_df:pd.DataFrame)->pd.DataFrame:
-            path_df = pd.DataFrame(path_df.apply(tuple,axis=1).apply(lambda x: tuple(filter(lambda z: z>-1,x))), columns=['simple_path_tuple'])
-            path_df['v_length'] = path_df.simple_path_tuple.apply(len)
-            path_df['p_0'] = path_df.simple_path_tuple.apply(lambda x: x[0])
-            path_df['t'] = path_df.simple_path_tuple.apply(lambda x: x[-1])
-            path_df = path_df.sort_values(['v_length', 'p_0', 't', 'simple_path_tuple']).reset_index().drop(columns=['index'])
-            return path_df
-        assert list(df.columns) == [0,1]
-        loop_free_edges = df[df[0]!=df[1]].copy()
-        tmp_df = loop_free_edges.copy()
-        for i in range(2,lim):
-            tmp_df = tmp_df.merge(loop_free_edges.rename(columns={0:i-1,1:i}), 'left').fillna(-1).applymap(int)
-            tmp_df[i] = tmp_df.apply(clean_last_vertex_to_simple_path,axis=1)
-            if tmp_df[i].max() == -1:
-                return paths_postprocess(tmp_df.drop(columns=i))
-            tmp_df = tmp_df.sort_values(i,ascending=False)
-        return paths_postprocess(tmp_df)
-    loop_free_edges = df[df[0]!=df[1]].copy()
-    path_df = iterated_join_edgelist(loop_free_edges, lim)
-    return path_df
-
-ddf = simple_short_paths(pd.DataFrame(cx.data_edgelist))
+ddf = cx.data_simple_paths
