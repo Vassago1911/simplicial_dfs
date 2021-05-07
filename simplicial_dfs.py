@@ -75,6 +75,9 @@ class config_handler():
 
 FOLDER_CONFIG_FILENAME = "pathing_stub.csv"
 config_stub = config_handler.read_from_full_filename(filename=FOLDER_CONFIG_FILENAME)
+data_folder = config_stub.get_key('complex_data_folder')
+if data_folder not in os.listdir():
+    os.mkdir(data_folder)
 del FOLDER_CONFIG_FILENAME    
 
 class complex_explorer_from_graph():    
