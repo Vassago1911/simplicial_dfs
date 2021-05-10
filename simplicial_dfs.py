@@ -151,9 +151,9 @@ class complex_explorer_from_graph():
             return self.config.get_key('target')
         return 'target'
 
-    def load_raw_VE_data_from_edgelist(self, edgelist_df:pd.DataFrame, source_name:str='source', target_name:str='target'):
+    def load_VE_from_edgelist(self, edgelist_df:pd.DataFrame, source_name:str='source', target_name:str='target'):
         """
-        ONLY EXPECTED TO BE USED ONCE PER MODEL, NO UPDATE YET; JUST WON'T DO A THING
+        ONLY EXPECTED TO BE USED ONCE PER MODEL, NO UPDATE; JUST WON'T DO A THING
         expect a dataframe like: edgelist_df = <'source','target', [data] >
         compile raw vertex list as sorted(set(edgelist_df.source.unique(), edgelist_df.target.unique()))
             and assign integer labels per index totally ordered like the labels before
@@ -181,6 +181,26 @@ class complex_explorer_from_graph():
             edgelist_df.to_csv(self.config.get_key('RAW_FOLDER_PLUS_RAW_INFIX')+'edges.csv',index=False)
             edgelist_df[[self.source, self.target]].reset_index().rename(columns={'index':'index_1'})\
                 .to_csv(self.config.get_key('COMPUTED_EDGE_FOLDER')+'1_data_order.csv', index=False)
+
+    def load_VE_from_nodepaths(self, nodepath_df:pd.DataFrame, node_name:str='event', path_key:str='key', time_key:str='timestamp', make_universal_source:bool=True, make_universal_sink:bool=False):
+        if not os.listdir(self.config.get_key('RAW_FOLDER')):
+            tmp = nodepath_df[[path_key, time_key, node_name]]
+            vertices = sorted(tmp[node_name].unique())
+            if make_universal_source:
+                vertices = ['__synth_source__',] + vertices
+            if make_universal_sink:
+                vertices = vertices + ['__synth_sink__']
+            vertex_index_assignment_dict = dict(enumerate(vertices))
+            #save map  V: [n] -> Labels as key-value-dict-csv, bijection along total label-order per two lines before
+            config_handler.to_key_value(d=vertex_index_assignment_dict, filename=self.config.get_key('RAW_FOLDER_PLUS_RAW_INFIX')+'vertices.csv')
+            #make map V^-1: Labels -> [n] to relabel 
+            vertex_label_to_index_dict = config_handler.from_key_value(self.config.get_key('RAW_FOLDER_PLUS_RAW_INFIX')+'vertices.csv', flipped=True)
+            pd.DataFrame(vertex_indices, columns=['index_0'])\
+                .to_csv(self.config.get_key('COMPUTED_VERTEX_FOLDER')+'0.csv', index=False)
+            nodepath_df['node_ix'] = nodepath_df[node_name].apply(lambda x: vertex_label_to_index_dict[x])
+            nodepath_df[path_key, time_key, 'node_ix']
+
+
 
     @property
     def vertex_list(self):
@@ -316,6 +336,10 @@ class complex_explorer_from_graph():
 
 cx = complex_explorer_from_graph('elbformat')          
 df = pd.read_csv('2021-02-23_elbformat.de_graph.csv').rename(columns={'from':'source', 'to':'target'})
-cx.load_raw_VE_data_from_edgelist(edgelist_df=df)
+cx.load_VE_from_edgelist(edgelist_df=df)
 
 ddf = cx.data_simple_paths
+
+cx = complex_explorer_from_graph('ece_paths')
+df = pd.read_csv('_Eventlog_Example.csv')
+cx.load_
